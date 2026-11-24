@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const bridge = vi.hoisted(() => ({ native: false, publish: vi.fn().mockResolvedValue({ ok: true }), clear: vi.fn() }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => bridge.native } }));
 vi.mock("@stormpath/car-session", () => ({ StormpathCarSession: { publish: bridge.publish, clear: bridge.clear } }));
+vi.mock("@stormpath/mapbox-navigation", () => ({
+  StormpathMapboxNavigation: { detachCarPlayGuidance: vi.fn().mockResolvedValue({ detached: false }) },
+}));
 
 import { buildCarConditions, publishCarSession } from "../carSessionPublish";
 import type { TimelineItem } from "../../nav/routeAheadSync";

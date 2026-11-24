@@ -30,6 +30,12 @@
   border-radius: 999px;
 }
 
+.cp-companion__head-btns {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .cp-companion__endbtn {
   font-size: 13px;
   font-weight: 600;

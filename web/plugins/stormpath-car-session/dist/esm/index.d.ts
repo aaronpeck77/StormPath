@@ -17,8 +17,10 @@ export type CarSessionPublish = {
 export interface StormpathCarSessionPlugin {
   publish(payload: CarSessionPublish): Promise<{ ok: boolean }>;
   clear(): Promise<void>;
-  /** True while a CarPlay template scene is attached to this app. */
-  carPlayConnected(): Promise<{ connected: boolean }>;
+  /** True while a CarPlay template scene is attached to this app.
+   *  `detached` = "StormPath-only unplug": scene still attached but the car
+   *  display is idle while the phone keeps the trip. */
+  carPlayConnected(): Promise<{ connected: boolean; detached: boolean }>;
   /**
    * Read-and-clear the hazard titles the CarPlay scene just announced
    * ("SEVERITY · label" strings from the phone's route-hazard snapshot).

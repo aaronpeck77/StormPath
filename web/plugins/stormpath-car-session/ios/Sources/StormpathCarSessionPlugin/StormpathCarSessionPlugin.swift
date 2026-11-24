@@ -47,7 +47,12 @@ public class StormpathCarSessionPlugin: CAPPlugin, CAPBridgedPlugin {
          * so the companion page never appeared while CarPlay still guided. */
         let flagged = Self.defaults.bool(forKey: Self.prefix + "sceneConnected")
         let sceneAlive = UIApplication.shared.connectedScenes.contains { $0 is CPTemplateApplicationScene }
-        call.resolve(["connected": flagged || sceneAlive])
+        /* navDetached = "StormPath-only unplug": scene attached but the car
+         * display is idle while the phone keeps the trip (companion hides). */
+        call.resolve([
+            "connected": flagged || sceneAlive,
+            "detached": Self.defaults.bool(forKey: Self.prefix + "navDetached"),
+        ])
     }
 
     /* The CarPlay scene drops the hazard titles it just announced into

@@ -28,6 +28,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setCarPlayAlternates", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopOrphanedGuidance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "detachCarPlayGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startTripPack", returnType: CAPPluginReturnPromise),
@@ -218,6 +219,24 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
                 await self.softStopGuidance()
             }
             call.resolve(["stopped": true])
+        }
+    }
+
+    /// "StormPath-only unplug": the phone wants its map + guidance back while
+    /// CarPlay stays attached for other apps. Ends the car's nav display only
+    /// — Core keeps running, the car's idle map offers Resume to re-attach.
+    @objc func detachCarPlayGuidance(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.resolve(["detached": false])
+                return
+            }
+            guard self.sessionActive, StormPathCarPlay.shared.isConnected else {
+                call.resolve(["detached": false])
+                return
+            }
+            StormPathCarPlay.shared.detachToPhone()
+            call.resolve(["detached": true])
         }
     }
 
@@ -919,6 +938,10 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor [weak self] in
             StormPathCarPlay.shared.onCarCancelledNavigation = { [weak self] in
                 self?.stopForCarNavigation()
+            }
+            StormPathCarPlay.shared.onCarResumeNavigation = { [weak self] in
+                guard let self, self.sessionActive, let routes = self.lastNavRoutes else { return }
+                StormPathCarPlay.shared.guidanceStarted(routes: routes)
             }
         }
         idleExitObserver = NotificationCenter.default.addObserver(

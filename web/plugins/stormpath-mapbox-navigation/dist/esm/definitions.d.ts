@@ -144,6 +144,13 @@ export interface StormpathMapboxNavigationPlugin {
    */
   stopOrphanedGuidance(): Promise<{ stopped: boolean }>;
   /**
+   * "StormPath-only unplug": end the car's navigation display while the trip
+   * keeps running on the phone. CarPlay stays connected for other apps; the
+   * car's idle map offers a Resume button to re-attach guidance.
+   * No-op when Core is idle, CarPlay is not connected, or already detached.
+   */
+  detachCarPlayGuidance(): Promise<{ detached: boolean }>;
+  /**
    * Quit the iOS process after this many milliseconds if it is still in the
    * background. A drive must not call this.
    */

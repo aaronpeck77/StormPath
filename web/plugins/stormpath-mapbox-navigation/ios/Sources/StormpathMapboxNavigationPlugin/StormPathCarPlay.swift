@@ -17,6 +17,8 @@ public final class StormPathCarPlay {
     public private(set) var isConnected = false
     /// The car's own navigation took over. The plugin stops the phone trip.
     var onCarCancelledNavigation: (() -> Void)?
+    /// Car's "Resume" button — the plugin re-arms guidance from lastNavRoutes.
+    var onCarResumeNavigation: (() -> Void)?
 
     private var interfaceController: CPInterfaceController?
     private var window: CPWindow?
@@ -28,6 +30,11 @@ public final class StormPathCarPlay {
     private var currentBanner: VisualInstructionBanner?
     private var routes: NavigationRoutes?
     private var guiding = false
+    /// "StormPath-only unplug": the car display was detached from the live
+    /// trip — Core still navigates for the phone, the scene stays connected
+    /// (Audible keeps playing), and the phone web layer hides the companion.
+    /// Cleared on disconnect, on a real guidance end, and on re-attach.
+    private var navDetached = false
     private var defaultMapButtons: [CPMapButton] = []
     private var overview = false
     private var snapshotSubscription: AnyCancellable?
@@ -69,6 +76,8 @@ public final class StormPathCarPlay {
         /* Phone companion polls a separate plugin — share the flag via defaults
          * because CPTemplateApplicationScene is not always visible to that check. */
         UserDefaults.standard.set(true, forKey: "stormpath.car.sceneConnected")
+        navDetached = false
+        UserDefaults.standard.set(false, forKey: "stormpath.car.navDetached")
 
         let map = NavigationMapView(
             location: locationSubject.compactMap { $0 }.eraseToAnyPublisher(),
@@ -130,6 +139,10 @@ public final class StormPathCarPlay {
             startTripIfNeeded()
         } else {
             idleLocation.startUpdatingLocation()
+            /* Replug mid-trip (or reconnect after a detach): if the phone's
+             * session is still live the car should re-arm guidance, not sit
+             * on an idle map while the phone hides behind the companion. */
+            onCarResumeNavigation?()
         }
         map.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
         controller.radar.setEnabled(overview && guiding)
@@ -155,12 +168,16 @@ public final class StormPathCarPlay {
         interfaceController = nil
         window = nil
         isConnected = false
+        navDetached = false
         UserDefaults.standard.set(false, forKey: "stormpath.car.sceneConnected")
+        UserDefaults.standard.set(false, forKey: "stormpath.car.navDetached")
     }
 
     // MARK: Phone guidance
 
     func guidanceStarted(routes: NavigationRoutes) {
+        navDetached = false
+        UserDefaults.standard.set(false, forKey: "stormpath.car.navDetached")
         guiding = true
         self.routes = routes
         idleLocation.stopUpdatingLocation()
@@ -188,6 +205,14 @@ public final class StormPathCarPlay {
     }
 
     func guidanceEnded(arrived: Bool) {
+        /* A real session end always clears the detach state — a stale Resume
+         * button must not survive the trip it belonged to. detachToPhone()
+         * re-arms the flag itself after this teardown runs. */
+        if navDetached {
+            navDetached = false
+            UserDefaults.standard.set(false, forKey: "stormpath.car.navDetached")
+            configureNavigationBar()
+        }
         guard guiding else { return }
         guiding = false
         overview = false
@@ -217,6 +242,22 @@ public final class StormPathCarPlay {
         if isConnected {
             idleLocation.startUpdatingLocation()
         }
+    }
+
+    /**
+     * "StormPath-only unplug": tear the car's navigation display down while
+     * the Core session keeps navigating the phone. The scene stays attached
+     * so the rest of CarPlay (Audible, calls) keeps working — the idle car
+     * map shows a Resume button that re-arms this same trip on the car.
+     */
+    func detachToPhone() {
+        guard isConnected, guiding, !navDetached else { return }
+        /* guidanceEnded tears down the display AND clears navDetached — set
+         * the flag after it runs, then reconfigure the bar to show Resume. */
+        guidanceEnded(arrived: false)
+        navDetached = true
+        UserDefaults.standard.set(true, forKey: "stormpath.car.navDetached")
+        configureNavigationBar()
     }
 
     // MARK: Template callbacks
@@ -268,6 +309,17 @@ public final class StormPathCarPlay {
 
     private func configureNavigationBar() {
         guard let mapTemplate else { return }
+        /* Detached ("unplugged"): the car's only nav action is re-arming the
+         * live phone trip on this screen. */
+        if navDetached {
+            mapTemplate.leadingNavigationBarButtons = [
+                CPBarButton(title: "Resume") { [weak self] _ in self?.onCarResumeNavigation?() },
+                CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
+            ]
+            radarButton = nil
+            mapTemplate.trailingNavigationBarButtons = []
+            return
+        }
         mapTemplate.leadingNavigationBarButtons = [
             CPBarButton(title: overview ? "Drive" : "RT") { [weak self] _ in
                 guard let self else { return }

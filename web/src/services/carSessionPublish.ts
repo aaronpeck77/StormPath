@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { StormpathCarSession } from "@stormpath/car-session";
+import { StormpathMapboxNavigation } from "@stormpath/mapbox-navigation";
 import type { TimelineItem } from "../nav/routeAheadSync";
 import type { RouteOutlookStep } from "../nav/routeForecastTimeline";
 import { formatRouteAlertTiming, isAlertExpired } from "../nav/routeAlertTiming";
@@ -74,12 +75,31 @@ export function buildCarConditions(p: CarConditionsInput): CarConditionSection[]
   ];
 }
 
-/** True while the car screen is attached (CarPlay scene alive). Web/false on failure. */
-export async function carPlayConnected(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
+/** Car screen state: `connected` = CarPlay scene alive; `detached` = scene
+ * alive but the car display was "unplugged" from the live trip (phone keeps
+ * navigating — the companion should hide even though the scene is up).
+ * Web/disconnected on failure. */
+export async function carPlayConnected(): Promise<{ connected: boolean; detached: boolean }> {
+  if (!Capacitor.isNativePlatform()) return { connected: false, detached: false };
   try {
     const result = await StormpathCarSession.carPlayConnected();
-    return result.connected === true;
+    return {
+      connected: result.connected === true,
+      detached: result.detached === true,
+    };
+  } catch {
+    return { connected: false, detached: false };
+  }
+}
+
+/** "StormPath-only unplug": end the car's nav display while the trip keeps
+ * running on the phone — CarPlay stays connected so Audible etc. keep
+ * playing, and the car's idle map offers Resume to re-attach guidance. */
+export async function detachCarPlayGuidance(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await StormpathMapboxNavigation.detachCarPlayGuidance();
+    return result.detached === true;
   } catch {
     return false;
   }

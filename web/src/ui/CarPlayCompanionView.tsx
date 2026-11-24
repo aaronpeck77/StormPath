@@ -75,6 +75,10 @@ type Props = {
    * car session) while CarPlay itself stays connected — Audible etc. keep
    * playing, the companion unmounts, and the phone map returns. */
   onEndTrip: () => void;
+  /** "StormPath-only unplug": hides the car's nav display while the trip
+   * keeps running on the phone map. CarPlay stays connected; the car's idle
+   * map offers Resume to re-attach. */
+  onUnplug: () => void;
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -251,13 +255,18 @@ function CarPlayCompanionBody(p: Props) {
     <div className="cp-companion" role="region" aria-label="CarPlay companion">
       <header className="cp-companion__head">
         <span className="cp-companion__badge">CarPlay driving</span>
-        <button
-          type="button"
-          className={`cp-companion__endbtn${endArmed ? " cp-companion__endbtn--armed" : ""}`}
-          onClick={onEndTap}
-        >
-          {endArmed ? "Tap again to end" : "End route"}
-        </button>
+        <div className="cp-companion__head-btns">
+          <button type="button" className="cp-companion__endbtn" onClick={p.onUnplug}>
+            Unplug
+          </button>
+          <button
+            type="button"
+            className={`cp-companion__endbtn${endArmed ? " cp-companion__endbtn--armed" : ""}`}
+            onClick={onEndTap}
+          >
+            {endArmed ? "Tap again to end" : "End route"}
+          </button>
+        </div>
       </header>
 
       <section className="cp-companion__eta">

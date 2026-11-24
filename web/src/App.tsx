@@ -38,6 +38,7 @@ import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useCarPlayActive } from "./hooks/useCarPlayActive";
 import { useCarPlaySessionPair } from "./hooks/useCarPlaySessionPair";
 import { useCarPlayHazardAlerts } from "./hooks/useCarPlayHazardAlerts";
+import { detachCarPlayGuidance } from "./services/carSessionPublish";
 import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
 import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
 import { SPEED_LIMIT_DISPLAY_ENABLED } from "./nav/postedSpeed";
@@ -2571,9 +2572,15 @@ export default function App() {
    * detail view (hazards/forecast/progress) instead of a second map that can
    * disagree with the car screen — no map peek: a second moving map is a
    * distraction, and every peek/remount cycle was another unmount of the
-   * live map stage (the handshake crash surface). */
-  const carPlayActive = useCarPlayActive();
-  useCarPlaySessionPair(carPlayActive, navigationStarted, carPlayConnectedRef);
+   * live map stage (the handshake crash surface). Companion also hides when
+   * the car display is "unplugged" — the phone keeps the trip on its own map
+   * while CarPlay stays connected for other apps. */
+  const carPlayPresence = useCarPlayActive();
+  /* Scene-attached is the raw flag — the session pair needs it even while
+   * detached so a phone-gone-idle trip can still release the car orphan. */
+  const carPlayConnected = carPlayPresence.connected;
+  const carPlayActive = carPlayConnected && !carPlayPresence.detached;
+  useCarPlaySessionPair(carPlayConnected, navigationStarted, carPlayConnectedRef);
   const carPlayHazardTitles = useCarPlayHazardAlerts(carPlayActive, navigationStarted);
   const showCarPlayCompanion = carPlayActive && navigationStarted;
   const carPlayAdvisoryLine = pickAdvisoryVoiceLine({
@@ -3400,6 +3407,7 @@ export default function App() {
           carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           onEndTrip={handleStopAndClear}
+          onUnplug={() => void detachCarPlayGuidance()}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>

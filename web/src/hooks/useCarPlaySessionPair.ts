@@ -12,11 +12,11 @@ import { useTripPlanStore } from "../state/tripPlanStore";
  * connect while planning, which raced GO and killed the new Core session.
  */
 export function useCarPlaySessionPair(
-  carPlayActive: boolean,
+  carPlayConnected: boolean,
   navigationStarted: boolean,
   carPlayConnectedRef: MutableRefObject<boolean>
 ): void {
-  carPlayConnectedRef.current = carPlayActive;
+  carPlayConnectedRef.current = carPlayConnected;
   const wasNavigatingRef = useRef(navigationStarted);
 
   useEffect(() => {
@@ -33,17 +33,17 @@ export function useCarPlaySessionPair(
     wasNavigatingRef.current = navigationStarted;
 
     /* Phone left an active trip while the car is still attached. */
-    if (wasNav && !navigationStarted && carPlayActive) {
+    if (wasNav && !navigationStarted && carPlayConnected) {
       releaseOrphan();
       return;
     }
 
     /* Cold boot / reload: trip cache settled idle, car may still be guiding. */
-    if (!navigationStarted && carPlayActive) {
+    if (!navigationStarted && carPlayConnected) {
       if (isTripBootSettled()) releaseOrphan();
       return subscribeTripBootSettled(releaseOrphan);
     }
 
     return undefined;
-  }, [carPlayActive, navigationStarted, carPlayConnectedRef]);
+  }, [carPlayConnected, navigationStarted, carPlayConnectedRef]);
 }
