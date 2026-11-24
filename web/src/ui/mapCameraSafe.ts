@@ -92,6 +92,21 @@ export function isMapUsable(map: Map | null | undefined): boolean {
   }
 }
 
+/**
+ * False after `map.remove()` — the style object is destroyed but the container
+ * can still be attached mid-unmount, so {@link isMapUsable} alone is not
+ * enough. Layer/source ops (`getLayer`, `removeLayer`, `getSource`, …) throw
+ * `this.style.getOwnLayer` on a dead map; gate on this before touching them.
+ */
+export function isMapStyleAlive(map: Map | null | undefined): boolean {
+  if (!map) return false;
+  try {
+    return Boolean((map as unknown as { style?: unknown }).style);
+  } catch {
+    return false;
+  }
+}
+
 /** Style loaded and container still attached — required before camera / worker RPC calls. */
 function isMapReadyForCamera(map: Map | null | undefined): map is Map {
   if (!map || !isMapUsable(map)) return false;

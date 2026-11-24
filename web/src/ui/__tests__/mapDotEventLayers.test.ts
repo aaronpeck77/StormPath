@@ -60,6 +60,8 @@ function fakeMap() {
   const sources = new Map<string, { data: unknown; tolerance?: number }>();
   const layers = new Map<string, Record<string, unknown>>();
   return {
+    /* Present while the map is alive — absent post-remove() like real Mapbox. */
+    style: {},
     sources,
     layers,
     getSource: (id: string) =>
@@ -98,6 +100,24 @@ describe("applyDotEventLayers", () => {
     expect(map.layers.has(DOT_EVENT_LAYER)).toBe(false);
     expect(map.sources.has(DOT_EVENT_SRC)).toBe(false);
     removeDotEventLayers(map as never);
+  });
+
+  it("removal on a dead map is a no-op, not a throw (CarPlay unmount path)", () => {
+    const map = fakeMap();
+    applyDotEventLayers(map as never, markers);
+    /* Post-remove() a real Mapbox map has no .style and getLayer throws
+     * `this.style.getOwnLayer` — the unmount cleanup must survive it. */
+    const dead = {
+      ...map,
+      style: undefined,
+      getLayer: () => {
+        throw new Error("undefined is not an object (evaluating 'this.style.getOwnLayer')");
+      },
+      getSource: () => {
+        throw new Error("dead style");
+      },
+    } as never;
+    expect(() => removeDotEventLayers(dead)).not.toThrow();
   });
 });
 

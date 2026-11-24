@@ -165,6 +165,7 @@ import {
   flattenMapCamera,
   safeSetMapLngLat,
   isMapUsable,
+  isMapStyleAlive,
   setMapCanvasCursor,
   stopMapCamera,
 } from "./mapCameraSafe";
@@ -1445,7 +1446,18 @@ function DriveMapInner({
       puckMarkerRef.current = null;
       destMarkerRef.current?.remove();
       destMarkerRef.current = null;
-      map.remove();
+      /* Keep the map alive through the rest of the unmount: cleanups declared
+       * later in this component (DOT symbol layers, etc.) still call
+       * getLayer/getSource on their captured map — a dead style throws
+       * `this.style.getOwnLayer` → root boundary → the CarPlay-handshake
+       * crash. Defer removal one tick; a remount builds a fresh map either way. */
+      window.setTimeout(() => {
+        try {
+          map.remove();
+        } catch {
+          /* already gone */
+        }
+      }, 0);
       mapRef.current = null;
       setMapReady(false);
       routeIdsRef.current = new Set();
@@ -5613,7 +5625,7 @@ function DriveMapInner({
     }
 
     return () => {
-      if (map.getLayer(DOT_EVENT_LAYER)) {
+      if (isMapStyleAlive(map) && map.getLayer(DOT_EVENT_LAYER)) {
         map.off("click", DOT_EVENT_LAYER, onDotClick);
       }
     };

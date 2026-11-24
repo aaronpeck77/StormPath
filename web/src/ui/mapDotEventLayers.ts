@@ -10,7 +10,7 @@ import type {
   SymbolLayer,
 } from "mapbox-gl";
 import type { DotMarkerInput } from "./dotMarkerPlacement";
-import { isValidLngLatPair } from "./mapCameraSafe";
+import { isMapStyleAlive, isValidLngLatPair } from "./mapCameraSafe";
 
 export const DOT_EVENT_SRC = "stormpath-dot-events";
 export const DOT_EVENT_LAYER = "stormpath-dot-events-icons";
@@ -181,8 +181,15 @@ export function applyDotEventLayers(
 }
 
 export function removeDotEventLayers(map: MapboxMap): void {
-  if (map.getLayer(DOT_EVENT_LAYER)) map.removeLayer(DOT_EVENT_LAYER);
-  if (map.getSource(DOT_EVENT_SRC)) map.removeSource(DOT_EVENT_SRC);
+  /* Dead style (post map.remove() / mid-teardown) throws `this.style.getOwnLayer`
+   * on getLayer — an unmount cleanup must never take the app down with it. */
+  if (!isMapStyleAlive(map)) return;
+  try {
+    if (map.getLayer(DOT_EVENT_LAYER)) map.removeLayer(DOT_EVENT_LAYER);
+    if (map.getSource(DOT_EVENT_SRC)) map.removeSource(DOT_EVENT_SRC);
+  } catch {
+    /* style mid-swap — the next paint rebuilds from scratch anyway */
+  }
 }
 
 /** True when a map point hits a DOT triangle (for dest-tap / click guards). */
