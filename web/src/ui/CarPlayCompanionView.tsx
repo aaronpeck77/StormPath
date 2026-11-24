@@ -71,7 +71,6 @@ type Props = {
   /** "SEVERITY · label" titles the CarPlay scene announced — highlight these on the phone. */
   carAlertedHazardTitles: string[];
   useMiles: boolean;
-  onShowMap: () => void;
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -98,7 +97,7 @@ function hazardLabelFromTitle(title: string): string {
  * clears the trip cache and reloads home — the flash Bill saw on GO).
  */
 class CompanionSafeBoundary extends Component<
-  { children: ReactNode; onShowMap: () => void },
+  { children: ReactNode },
   { error: Error | null }
 > {
   state: { error: Error | null } = { error: null };
@@ -125,16 +124,20 @@ class CompanionSafeBoundary extends Component<
         <div className="cp-companion" role="alert">
           <header className="cp-companion__head">
             <span className="cp-companion__badge">CarPlay driving</span>
-            <button type="button" className="cp-companion__mapbtn" onClick={this.props.onShowMap}>
-              Map
-            </button>
           </header>
           <section className="cp-companion__eta">
             <div className="cp-companion__dest">Weather panel hiccuped</div>
             <p className="cp-companion__advisory">
-              Trip is still running on CarPlay. Open Map for the phone view, or
-              leave this screen — guidance is not cancelled.
+              Trip is still running on CarPlay — guidance is not cancelled.
+              Disconnecting CarPlay restores the phone map.
             </p>
+            <button
+              type="button"
+              className="cp-companion__retry"
+              onClick={() => this.setState({ error: null })}
+            >
+              Try again
+            </button>
           </section>
         </div>
       );
@@ -151,7 +154,7 @@ class CompanionSafeBoundary extends Component<
  */
 export function CarPlayCompanionView(p: Props) {
   return (
-    <CompanionSafeBoundary onShowMap={p.onShowMap}>
+    <CompanionSafeBoundary>
       <CarPlayCompanionBody {...p} />
     </CompanionSafeBoundary>
   );
@@ -216,9 +219,6 @@ function CarPlayCompanionBody(p: Props) {
     <div className="cp-companion" role="region" aria-label="CarPlay companion">
       <header className="cp-companion__head">
         <span className="cp-companion__badge">CarPlay driving</span>
-        <button type="button" className="cp-companion__mapbtn" onClick={p.onShowMap}>
-          Map
-        </button>
       </header>
 
       <section className="cp-companion__eta">

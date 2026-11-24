@@ -47,7 +47,6 @@ function DockAboutRow({
   infoAside,
   aboutRowClassName,
   toolsAfterChildren = false,
-  routeRowAbove,
   children,
 }: {
   stormyOn: boolean;
@@ -64,9 +63,6 @@ function DockAboutRow({
   aboutRowClassName?: string;
   /** Render the inline route slot before Tools so it sits beside miles-left. */
   toolsAfterChildren?: boolean;
-  /** Slim row rendered directly above the route-select slot (CarPlay
-   * map-peek return chip). */
-  routeRowAbove?: ReactNode;
   children?: ReactNode;
 }) {
   const infoButton = <MapInfoButton onOpenAbout={onOpenAbout} />;
@@ -100,22 +96,11 @@ function DockAboutRow({
         </div>
       );
     }
-    /* CarPlay map-peek chip rides directly above the route-select slot here
-     * too — as a standalone row over the whole about-row it floated a full
-     * stop/change stack above the picker (Bill, Nov 19). */
-    const childrenWithReturn = routeRowAbove ? (
-      <div className="nav-bottom-dock__cp-return-col">
-        <div className="nav-cp-return-row">{routeRowAbove}</div>
-        {children}
-      </div>
-    ) : (
-      children
-    );
     return (
       <div className={aboutRowClass}>
         {info}
-        {toolsAfterChildren ? childrenWithReturn : tools}
-        {toolsAfterChildren ? tools : childrenWithReturn}
+        {toolsAfterChildren ? children : tools}
+        {toolsAfterChildren ? tools : children}
       </div>
     );
   }
@@ -126,7 +111,6 @@ function DockAboutRow({
         {compass}
         {info}
         {tools}
-        {routeRowAbove ? <div className="nav-cp-return-row">{routeRowAbove}</div> : null}
         <div className="nav-bottom-dock__stormy-row">
           {stormy}
           {children}
@@ -166,8 +150,6 @@ type Props = {
   /** Tablet-only direct entry to the StormPath Tools sheet (hidden on phones via CSS). */
   onOpenTools?: () => void;
   driveDistanceRemainingLabel: string | null;
-  /** CarPlay map-peek: "Weather & hazards" return chip, rendered right of the miles-left box. */
-  carPlayMapReturn?: ReactNode;
   /** iPad landscape command-panel widgets (hazard countdown, PiP) between nav dock and bottom chrome. */
   panelWidgets?: ReactNode;
 
@@ -291,7 +273,6 @@ export function AppBottomChrome({
   onOpenAbout,
   onOpenTools,
   driveDistanceRemainingLabel,
-  carPlayMapReturn,
   panelWidgets,
   routePickItems,
   lineFocusId,
@@ -721,19 +702,12 @@ export function AppBottomChrome({
               {driveDistanceRemainingLabel ? (
                 <NavMilesLeftBox label={driveDistanceRemainingLabel} />
               ) : null}
-              {carPlayMapReturn}
             </DockAboutRow>
             {/* iPad gets the address bar in Drive too — phone DR stays bar-free. */}
             <div className="nav-dest-search--ipad-only">{destSearchRow}</div>
             </>
           ) : navigationStarted && (viewMode === "topdown" || viewMode === "route") ? (
             <>
-            {/* CarPlay map-peek return sits directly above the route-select
-             * line via routeRowAbove; the standalone row is only the iPad
-             * fallback where that slot isn't rendered. */}
-            {carPlayMapReturn && tabletLandscape ? (
-              <div className="nav-cp-return-row">{carPlayMapReturn}</div>
-            ) : null}
             {tabletLandscape ? (
               /* iPad panel: ⓘ/miles/+Stop/Change live in the dock row above —
                * this row keeps Stormy + the route select only, matching DR. */
@@ -756,7 +730,6 @@ export function AppBottomChrome({
                 ) : null
               }
               leadingActions={stopChangeButtons}
-              routeRowAbove={carPlayMapReturn}
             >
               {mpRouteSlot}
             </DockAboutRow>

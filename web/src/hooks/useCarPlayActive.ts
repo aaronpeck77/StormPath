@@ -15,9 +15,11 @@ export function useCarPlayActive(): boolean {
     if (!Capacitor.isNativePlatform()) return;
     let alive = true;
     const tick = () => {
-      void carPlayConnected().then((connected) => {
-        if (alive) setActive(connected);
-      });
+      void carPlayConnected()
+        .then((connected) => {
+          if (alive) setActive(connected);
+        })
+        .catch(() => undefined);
     };
     tick();
     const timer = window.setInterval(tick, POLL_MS);

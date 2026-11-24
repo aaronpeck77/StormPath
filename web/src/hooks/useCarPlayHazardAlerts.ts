@@ -22,17 +22,19 @@ export function useCarPlayHazardAlerts(active: boolean, navigating: boolean): st
     }
     let alive = true;
     const tick = () => {
-      void consumeCarPlayHazardAlert().then((announced) => {
-        if (!alive || announced.length === 0) return;
-        let added = false;
-        for (const t of announced) {
-          if (!seenRef.current.has(t)) {
-            seenRef.current.add(t);
-            added = true;
+      void consumeCarPlayHazardAlert()
+        .then((announced) => {
+          if (!alive || announced.length === 0) return;
+          let added = false;
+          for (const t of announced) {
+            if (!seenRef.current.has(t)) {
+              seenRef.current.add(t);
+              added = true;
+            }
           }
-        }
-        if (added) setTitles([...seenRef.current]);
-      });
+          if (added) setTitles([...seenRef.current]);
+        })
+        .catch(() => undefined);
     };
     tick();
     const timer = window.setInterval(tick, POLL_MS);

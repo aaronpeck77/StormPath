@@ -2569,15 +2569,13 @@ export default function App() {
 
   /* While CarPlay is attached and a trip is navigating, the phone becomes the
    * detail view (hazards/forecast/progress) instead of a second map that can
-   * disagree with the car screen. Toggling Map peeks at the map for the drive. */
+   * disagree with the car screen — no map peek: a second moving map is a
+   * distraction, and every peek/remount cycle was another unmount of the
+   * live map stage (the handshake crash surface). */
   const carPlayActive = useCarPlayActive();
   useCarPlaySessionPair(carPlayActive, navigationStarted, carPlayConnectedRef);
   const carPlayHazardTitles = useCarPlayHazardAlerts(carPlayActive, navigationStarted);
-  const [carPlayMapPeek, setCarPlayMapPeek] = useState(false);
-  useEffect(() => {
-    if (!(carPlayActive && navigationStarted)) setCarPlayMapPeek(false);
-  }, [carPlayActive, navigationStarted]);
-  const showCarPlayCompanion = carPlayActive && navigationStarted && !carPlayMapPeek;
+  const showCarPlayCompanion = carPlayActive && navigationStarted;
   const carPlayAdvisoryLine = pickAdvisoryVoiceLine({
     nextHazardAtEtaLine,
     driveRouteAheadLine,
@@ -3389,7 +3387,7 @@ export default function App() {
             gustLinePoints: activeProgressCalloutPanel.gustLinePoints,
             gustSpikePoints: activeProgressCalloutPanel.gustSpikePoints,
             fallbackSegments: activeProgressCalloutPanel.segments.filter(
-              (s) => !s.key.startsWith("route-ahead-")
+              (s) => !(s.key ?? "").startsWith("route-ahead-")
             ),
             planEtaMinutes: guidanceRoute?.baseEtaMinutes ?? null,
             progressAlongM: progressPanelAlongM,
@@ -3401,12 +3399,6 @@ export default function App() {
           advisory={stormAdvisoryBarPropsWithNext}
           carAlertedHazardTitles={carPlayHazardTitles}
           useMiles={roadUsesMiles(effectiveUserLngLat)}
-          onShowMap={() => {
-            setCarPlayMapPeek(true);
-            /* Phone map-peek during a drive = the iPad PiP route view:
-             * land on the route line, not wherever the last view was. */
-            if (navigationStarted) setViewMode("route");
-          }}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>
@@ -3778,17 +3770,6 @@ export default function App() {
             setRecenterPlanningPuckTick((n) => n + 1);
           }}
           showCompactDest={showCompactDest}
-          carPlayMapReturn={
-            carPlayActive && navigationStarted && carPlayMapPeek ? (
-              <button
-                type="button"
-                className="cp-companion__return"
-                onClick={() => setCarPlayMapPeek(false)}
-              >
-                Weather &amp; hazards
-              </button>
-            ) : null
-          }
           handleCompactDestOpen={handleCompactDestOpen}
           onChangeDestination={() => {
             /* Destination picks clear via-stops; make sure an armed add-stop
