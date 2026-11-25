@@ -3,6 +3,21 @@
 Posts tweets to the StormPath X account through a Cloudflare Worker.
 No libraries — OAuth 1.0a signing is hand-rolled on WebCrypto (~40 lines).
 
+## Daily post rotation (Central time)
+
+| Day | Post |
+| --- | ---- |
+| Tue | **Work Zone Report** — busiest interstate/US work-zone corridors + amber map |
+| Thu | **Winter Watch** — winter alerts + chains/freezing/snow road conditions + blue map |
+| all others | **Morning Forecast** — severe storms + closures + orange/red map |
+
+A theme day with no matching content falls back to the forecast. Any themed
+post can be previewed or force-posted with `?theme=forecast|workzones|winter`
+on `/forecast-preview`, `/forecast-image-preview`, or `/forecast-post`.
+
+Legend/title chips are baked PNGs in `src/brand.ts` — regenerate or add new
+ones with `python gen-chips.py` (requires PIL).
+
 ## One-time setup (your clicks — ~15 min)
 
 1. **Create the X account** first (x.com) — e.g. @StormPathApp. Pick a handle,

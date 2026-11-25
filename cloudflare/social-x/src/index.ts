@@ -2,16 +2,31 @@
  * stormpath-social-x — minimal X (Twitter) posting worker.
  *
  * POST /post              { "text": "..." }   → publishes a tweet
- * POST /forecast-preview                     → returns the composed forecast, no post
- * POST /forecast-post                        → composes and posts the daily forecast
+ * POST /forecast-preview  ?theme=…            → returns the composed post, no post
+ * POST /forecast-post     ?theme=…            → composes and posts the daily post
+ * GET  /forecast-image-preview ?theme=…       → the map PNG that would ship
  * GET  /health                               → { ok, configured }
- * Cron 13:00 UTC (8am ET)                    → posts the daily forecast
+ * Cron 13:00 UTC (8am ET)                    → posts today's themed update
+ *
+ * Themes rotate by weekday (Central): Tue = Work Zone Report,
+ * Thu = Winter Watch, all other days = the storm/closure forecast.
+ * A theme day with no matching content falls back to the forecast.
  *
  * Auth: header `x-social-key: <SOCIAL_POST_KEY>` on every mutating call.
  * X credentials: OAuth 1.0a user-context via wrangler secrets.
  */
 
-import { BRAND_PNG_B64, TITLE_PNG_B64, ALERT_PNG_B64, CLOSURE_PNG_B64 } from "./brand";
+import {
+  BRAND_PNG_B64,
+  TITLE_PNG_B64,
+  ALERT_PNG_B64,
+  CLOSURE_PNG_B64,
+  WZ_TITLE_PNG_B64,
+  WZ_CHIP_PNG_B64,
+  WIN_TITLE_PNG_B64,
+  WIN_ALERT_PNG_B64,
+  WIN_CHIP_PNG_B64,
+} from "./brand";
 import { decodePng, encodePng, composite, type RgbaImage } from "./pngCodec";
 
 export interface Env {
@@ -132,6 +147,38 @@ interface DotEvent {
   roadName?: string;
   state?: string;
   title?: string;
+  workType?: string | null;
+  point?: [number, number];
+}
+
+/** Post themes — the daily cron rotates which angle it features. */
+type PostTheme = "forecast" | "workzones" | "winter";
+
+/** Weekday rotation in Central time: Tue = work zones, Thu = winter watch. */
+function themeForToday(): PostTheme {
+  const wd = new Date().toLocaleDateString("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+  });
+  if (wd === "Tue") return "workzones";
+  if (wd === "Thu") return "winter";
+  return "forecast";
+}
+
+function themeParam(url: URL): PostTheme | null {
+  const t = url.searchParams.get("theme");
+  return t === "workzones" || t === "winter" || t === "forecast" ? t : null;
+}
+
+const MAJOR_ROAD_RE = /^(I|US)[-\s]?(\d+)/i;
+const WINTER_EVENT_RE =
+  /blizzard|ice storm|winter storm|winter weather|snow squall|lake effect|freez|frost|wind chill|avalanche/i;
+const WINTER_COND_RE =
+  /chain|traction|freez|icy|\bice\b|frost|snow|slick|drift|covered|whiteout|avalanche/i;
+const COND_NOISE_RE = /no active reporting/i;
+
+function stateAbbr(state: string | undefined): string {
+  return STATE_ABBR[(state ?? "").trim().toLowerCase()] ?? "";
 }
 
 const STATE_ABBR: Record<string, string> = {
@@ -147,6 +194,9 @@ const STATE_ABBR: Record<string, string> = {
   texas: "TX", utah: "UT", vermont: "VT", virginia: "VA", washington: "WA",
   "west virginia": "WV", wisconsin: "WI", wyoming: "WY", "district of columbia": "DC",
 };
+
+/** Real US state/DC codes — filters marine-zone UGC prefixes (GM, PK, …). */
+const VALID_STATE_CODES = new Set(Object.values(STATE_ABBR));
 
 async function stormLines(): Promise<string[]> {
   const res = await fetch(NWS_ALERTS_URL, {
@@ -164,7 +214,7 @@ async function stormLines(): Promise<string[]> {
     const set = statesByBucket.get(bucket.label) ?? new Set<string>();
     for (const ugc of p.geocode?.UGC ?? []) {
       const st = ugc.slice(0, 2);
-      if (/^[A-Z]{2}$/.test(st)) set.add(st);
+      if (VALID_STATE_CODES.has(st)) set.add(st);
     }
     statesByBucket.set(bucket.label, set);
   }
@@ -204,7 +254,7 @@ const MAP_IMG_W = 800;
 const MAP_IMG_H = 450;
 
 interface NwsFeature {
-  properties?: { severity?: string; geocode?: { UGC?: string[] } };
+  properties?: { event?: string; severity?: string; geocode?: { UGC?: string[] } };
   geometry?: { type: string; coordinates: unknown } | null;
 }
 
@@ -230,10 +280,32 @@ async function severeAlerts(): Promise<NwsFeature[]> {
   );
 }
 
+/** Winter events incl. Moderate severity — advisories/watches matter for driving. */
+async function winterAlerts(): Promise<NwsFeature[]> {
+  const res = await fetch(NWS_ALERTS_URL, {
+    headers: { "User-Agent": "StormPath daily forecast (contact: stormpath-app)" },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { features?: NwsFeature[] };
+  return (data.features ?? []).filter(
+    (f) =>
+      f.properties?.event &&
+      WINTER_EVENT_RE.test(f.properties.event) &&
+      ["Extreme", "Severe", "Moderate"].includes(f.properties?.severity ?? "")
+  );
+}
+
+type ChipKey = "alert" | "closure" | "wz" | "winAlert" | "winRoads";
+
+interface MapSpec {
+  geojson: object;
+  hasContent: boolean;
+  chips: ChipKey[];
+  titleKey: "title" | "wzTitle" | "winTitle";
+}
+
 /** Pick the state with the most severe alerts → focus the map there. */
-async function mapFocus(
-  env: Env
-): Promise<{ geojson: object; hasContent: boolean; hasPolys: boolean; hasPins: boolean }> {
+async function forecastMapSpec(env: Env): Promise<MapSpec> {
   const alerts = await severeAlerts();
   const byState = new Map<string, NwsFeature[]>();
   for (const f of alerts) {
@@ -300,7 +372,127 @@ async function mapFocus(
     }
   } catch { /* image without closures is fine */ }
 
-  return { geojson: { type: "FeatureCollection", features }, hasContent: features.length > 0, hasPolys, hasPins };
+  const chips: ChipKey[] = [
+    ...(hasPolys ? (["alert"] as const) : []),
+    ...(hasPins ? (["closure"] as const) : []),
+  ];
+  return {
+    geojson: { type: "FeatureCollection", features },
+    hasContent: features.length > 0,
+    chips,
+    titleKey: "title",
+  };
+}
+
+/** Amber pins on interstate/US-route construction. Focus = busiest state. */
+async function workzoneMapSpec(env: Env): Promise<MapSpec> {
+  const features: object[] = [];
+  try {
+    const res = await env.DOT_FEEDS.fetch(DOT_EVENTS_URL);
+    const data = res.ok ? ((await res.json()) as { events?: DotEvent[] }) : {};
+    const major = (data.events ?? []).filter(
+      (e) => e.kind === "construction" && e.point && MAJOR_ROAD_RE.test((e.roadName ?? "").trim())
+    );
+    // Focus on the state holding the single busiest corridor — keeps the map
+    // telling the same story as the text's lead line.
+    const corridors = new Map<string, number>();
+    for (const e of major) {
+      const m = (e.roadName ?? "").trim().toUpperCase().match(MAJOR_ROAD_RE);
+      const st = stateAbbr(e.state);
+      if (!m || !st) continue;
+      const key = `${m[1]}-${m[2]} ${st}`;
+      corridors.set(key, (corridors.get(key) ?? 0) + 1);
+    }
+    const focusState = [...corridors.entries()]
+      .sort((a, b) => b[1] - a[1])[0]?.[0]
+      .split(" ")
+      .pop();
+    let near = focusState ? major.filter((e) => stateAbbr(e.state) === focusState) : [];
+    if (near.length < 4) near = major;
+    for (const e of near.slice(0, 60)) {
+      features.push({
+        type: "Feature",
+        properties: { "marker-color": "#f5a623", "marker-size": "small" },
+        geometry: { type: "Point", coordinates: [roundCoord(e.point![0]), roundCoord(e.point![1])] },
+      });
+    }
+  } catch { /* fall through to empty spec */ }
+  return {
+    geojson: { type: "FeatureCollection", features },
+    hasContent: features.length > 0,
+    chips: ["wz"],
+    titleKey: "wzTitle",
+  };
+}
+
+/** Blue winter-alert polygons + ice-blue condition pins (chains, freezing, snow). */
+async function winterMapSpec(env: Env): Promise<MapSpec> {
+  const alerts = await winterAlerts();
+  const byState = new Map<string, NwsFeature[]>();
+  for (const f of alerts) {
+    const st = f.properties?.geocode?.UGC?.[0]?.slice(0, 2) ?? "";
+    if (!st) continue;
+    byState.set(st, [...(byState.get(st) ?? []), f]);
+  }
+  const [focusState, focusAlerts] =
+    [...byState.entries()].sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+
+  const features: object[] = [];
+  const chips: ChipKey[] = [];
+
+  const polySrc = [
+    ...(focusAlerts ?? []).filter((f) => f.geometry),
+    ...alerts.filter((f) => f.geometry),
+  ].slice(0, 4);
+  for (const f of polySrc) {
+    const g = f.geometry;
+    if (!g) continue;
+    const polys =
+      g.type === "Polygon" ? [g.coordinates] :
+      g.type === "MultiPolygon" ? (g.coordinates as unknown[]).slice(0, 3) : [];
+    for (const poly of polys) {
+      const rings = (poly as unknown[]).map(simplifyRing);
+      features.push({
+        type: "Feature",
+        properties: { fill: "#4da6ff", "fill-opacity": 0.18, stroke: "#4da6ff", "stroke-width": 1.5 },
+        geometry: { type: "Polygon", coordinates: rings },
+      });
+    }
+  }
+  if (polySrc.length) chips.push("winAlert");
+
+  try {
+    const res = await env.DOT_FEEDS.fetch(DOT_EVENTS_URL);
+    const data = res.ok ? ((await res.json()) as { events?: DotEvent[] }) : {};
+    const winter = (data.events ?? []).filter((e) => {
+      if (e.kind !== "condition" || !e.point) return false;
+      const txt = `${e.workType ?? ""} ${e.title ?? ""}`;
+      return WINTER_COND_RE.test(txt) && !COND_NOISE_RE.test(txt);
+    });
+    let near = focusState ? winter.filter((e) => stateAbbr(e.state) === focusState) : [];
+    if (near.length < 3) near = winter;
+    for (const e of near.slice(0, 60)) {
+      features.push({
+        type: "Feature",
+        properties: { "marker-color": "#4dc3ff", "marker-size": "small" },
+        geometry: { type: "Point", coordinates: [roundCoord(e.point![0]), roundCoord(e.point![1])] },
+      });
+    }
+    if (winter.length) chips.push("winRoads");
+  } catch { /* image without pins is fine */ }
+
+  return {
+    geojson: { type: "FeatureCollection", features },
+    hasContent: features.length > 0,
+    chips,
+    titleKey: "winTitle",
+  };
+}
+
+function mapSpecFor(env: Env, theme: PostTheme): Promise<MapSpec> {
+  if (theme === "workzones") return workzoneMapSpec(env);
+  if (theme === "winter") return winterMapSpec(env);
+  return forecastMapSpec(env);
 }
 
 /** Google polyline encoding — Mapbox `path-` overlays use this; ~5x smaller
@@ -326,26 +518,35 @@ function polylineEncode(coords: [number, number][], precision = 5): string {
 }
 
 async function buildMapImage(
-  env: Env
+  env: Env,
+  spec: MapSpec
 ): Promise<{ png: ArrayBuffer | null; reason: string }> {
   if (!env.MAPBOX_TOKEN) return { png: null, reason: "no mapbox token" };
-  const { geojson, hasContent, hasPolys, hasPins } = await mapFocus(env);
+  const { geojson, hasContent, chips: chipKeys, titleKey } = spec;
   if (!hasContent) return { png: null, reason: "no features" };
 
-  // Translate the FeatureCollection into compact overlay syntax:
+  // Translate the FeatureCollection into compact overlay syntax — colors come
+  // from each feature's properties so themes can restyle without new code:
   // polygons → path-stroke+fill-opacity(fill-opacity)(polyline)
   // points   → pin-s-hex(lon,lat)
+  const hex = (v: unknown, fallback: string) =>
+    String(v ?? fallback).replace("#", "");
   const overlays: string[] = [];
   for (const f of (geojson as { features: { properties?: Record<string, unknown>; geometry: { type: string; coordinates: unknown } }[] }).features) {
     const g = f.geometry;
+    const p = f.properties ?? {};
     if (g.type === "Polygon") {
       const ring = (g.coordinates as number[][][])[0] ?? [];
-      const coords = ring.map((p) => [p[0], p[1]] as [number, number]);
-      if (coords.length > 2)
-        overlays.push(`path-2+ff7a1a-0.9+ff7a1a-0.18(${polylineEncode(coords, 5)})`);
+      const coords = ring.map((pt) => [pt[0], pt[1]] as [number, number]);
+      if (coords.length > 2) {
+        const stroke = hex(p.stroke, "#ff7a1a");
+        const fill = hex(p.fill, "#ff7a1a");
+        const fillOp = p["fill-opacity"] ?? 0.18;
+        overlays.push(`path-2+${stroke}-0.9+${fill}-${fillOp}(${polylineEncode(coords, 5)})`);
+      }
     } else if (g.type === "Point") {
       const [lng, lat] = g.coordinates as number[];
-      overlays.push(`pin-s+ff4d4d(${lng.toFixed(3)},${lat.toFixed(3)})`);
+      overlays.push(`pin-s+${hex(p["marker-color"], "#ff4d4d")}(${lng.toFixed(3)},${lat.toFixed(3)})`);
     }
   }
   const overlay = encodeURIComponent(overlays.slice(0, 80).join(","));
@@ -386,17 +587,21 @@ async function buildMapImage(
         title: await dec(TITLE_PNG_B64),
         alert: await dec(ALERT_PNG_B64),
         closure: await dec(CLOSURE_PNG_B64),
+        wzTitle: await dec(WZ_TITLE_PNG_B64),
+        wz: await dec(WZ_CHIP_PNG_B64),
+        winTitle: await dec(WIN_TITLE_PNG_B64),
+        winAlert: await dec(WIN_ALERT_PNG_B64),
+        winRoads: await dec(WIN_CHIP_PNG_B64),
       };
     }
-    const chips: RgbaImage[] = [
-      ...(hasPolys ? [sprites.alert] : []),
-      ...(hasPins ? [sprites.closure] : []),
-    ];
-    const legW = Math.max(sprites.title.w, ...chips.map((c) => c.w)) + 16;
-    const legH = sprites.title.h + 6 + chips.reduce((a, c) => a + c.h + 4, 0) + 8;
+    const spr = sprites!;
+    const title = spr[titleKey];
+    const chips = chipKeys.map((k) => spr[k]);
+    const legW = Math.max(title.w, ...chips.map((c) => c.w)) + 16;
+    const legH = title.h + 6 + chips.reduce((a, c) => a + c.h + 4, 0) + 8;
     composite(map, darkPad(legW, legH), 6, 6);
-    composite(map, sprites.title, 14, 10);
-    let cy = 10 + sprites.title.h + 8;
+    composite(map, title, 14, 10);
+    let cy = 10 + title.h + 8;
     for (const chip of chips) {
       composite(map, chip, 14, cy);
       cy += chip.h + 4;
@@ -409,7 +614,7 @@ async function buildMapImage(
 }
 
 let brandImg: RgbaImage | null = null;
-let sprites: { title: RgbaImage; alert: RgbaImage; closure: RgbaImage } | null = null;
+let sprites: Record<string, RgbaImage> | null = null;
 
 function usDate(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -440,6 +645,127 @@ async function buildForecast(env: Env): Promise<string> {
   return text;
 }
 
+/** Tuesday theme — busiest interstate/US work-zone corridors. */
+async function buildWorkzoneText(env: Env): Promise<string | null> {
+  const res = await env.DOT_FEEDS.fetch(DOT_EVENTS_URL);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { events?: DotEvent[] };
+  const corridors = new Map<string, number>();
+  let total = 0;
+  for (const e of data.events ?? []) {
+    if (e.kind !== "construction") continue;
+    total++;
+    const m = (e.roadName ?? "").trim().toUpperCase().match(MAJOR_ROAD_RE);
+    const st = stateAbbr(e.state);
+    if (!m || !st) continue;
+    const key = `${m[1]}-${m[2]} ${st}`;
+    corridors.set(key, (corridors.get(key) ?? 0) + 1);
+  }
+  if (!corridors.size) return null;
+  const top = [...corridors.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const header = `StormPath Work Zone Report · US · ${usDate()}`;
+  const body = [
+    ...top.map(([k, n]) => `${k} — ${n} active zones`),
+    `${total.toLocaleString("en-US")} work zones tracked today.`,
+  ];
+  let text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
+  while (text.length > 280 && body.length > 1) {
+    body.splice(body.length - 2, 1);
+    text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
+  }
+  return text;
+}
+
+/** Finer winter buckets for the winter post's alert lines. */
+const WINTER_ALERT_BUCKETS: { match: RegExp; label: string }[] = [
+  { match: /blizzard/i, label: "Blizzard" },
+  { match: /ice storm/i, label: "Ice storm" },
+  { match: /winter storm/i, label: "Winter storm" },
+  { match: /wind chill/i, label: "Wind chill" },
+  { match: /freez|frost/i, label: "Freeze" },
+];
+
+/** Thursday theme — winter alerts + road-level winter conditions. */
+async function buildWinterText(env: Env): Promise<string | null> {
+  const [alertRes, dotRes] = await Promise.all([
+    fetch(NWS_ALERTS_URL, {
+      headers: { "User-Agent": "StormPath daily forecast (contact: stormpath-app)" },
+    }),
+    env.DOT_FEEDS.fetch(DOT_EVENTS_URL),
+  ]);
+  const lines: string[] = [];
+
+  if (alertRes.ok) {
+    const data = (await alertRes.json()) as { features?: NwsAlert[] };
+    const statesByBucket = new Map<string, Set<string>>();
+    for (const f of data.features ?? []) {
+      const p = f.properties;
+      if (!p?.event || !WINTER_EVENT_RE.test(p.event)) continue;
+      if (!["Extreme", "Severe", "Moderate"].includes(p.severity)) continue;
+      const bucket = WINTER_ALERT_BUCKETS.find((b) => b.match.test(p.event));
+      if (!bucket) continue;
+      const set = statesByBucket.get(bucket.label) ?? new Set<string>();
+      for (const ugc of p.geocode?.UGC ?? []) {
+        const st = ugc.slice(0, 2);
+        if (VALID_STATE_CODES.has(st)) set.add(st);
+      }
+      statesByBucket.set(bucket.label, set);
+    }
+    lines.push(
+      ...[...statesByBucket.entries()]
+        .filter(([, s]) => s.size > 0)
+        .map(([label, s]) => `${label}: ${[...s].sort().join(", ")}`)
+    );
+  }
+
+  if (dotRes.ok) {
+    const data = (await dotRes.json()) as { events?: DotEvent[] };
+    const chains = new Set<string>(),
+      freezing = new Set<string>(),
+      snow = new Set<string>();
+    for (const e of data.events ?? []) {
+      if (e.kind !== "condition") continue;
+      const txt = `${e.workType ?? ""} ${e.title ?? ""}`;
+      if (COND_NOISE_RE.test(txt) || !WINTER_COND_RE.test(txt)) continue;
+      const st = stateAbbr(e.state);
+      if (!st) continue;
+      if (/chain|traction/i.test(txt)) chains.add(st);
+      else if (/freez|icy|\bice\b|frost|slick/i.test(txt)) freezing.add(st);
+      else snow.add(st);
+    }
+    const fmt = (label: string, s: Set<string>) =>
+      s.size ? `${label}: ${[...s].sort().join(", ")}` : null;
+    for (const l of [
+      fmt("Chains required", chains),
+      fmt("Freezing pavement", freezing),
+      fmt("Snow-covered roads", snow),
+    ]) {
+      if (l) lines.push(l);
+    }
+  }
+
+  if (!lines.length) return null;
+  const header = `StormPath Winter Watch · US · ${usDate()}`;
+  let text = `${header}\n\n${lines.join("\n")}\n\n${FOOTER}`;
+  while (text.length > 280 && lines.length > 1) {
+    lines.splice(lines.length - 1, 1);
+    text = `${header}\n\n${lines.join("\n")}\n\n${FOOTER}`;
+  }
+  return text;
+}
+
+/** Build the post for a theme; falls back to the forecast when a theme is empty. */
+async function buildPost(
+  env: Env,
+  theme: PostTheme
+): Promise<{ theme: PostTheme; text: string }> {
+  const themed =
+    theme === "workzones" ? await buildWorkzoneText(env) :
+    theme === "winter" ? await buildWinterText(env) : null;
+  if (themed) return { theme, text: themed };
+  return { theme: "forecast", text: await buildForecast(env) };
+}
+
 /* ------------------------------------------------------------------ */
 
 function configured(env: Env): boolean {
@@ -468,7 +794,8 @@ export default {
     }
 
     if (url.pathname === "/forecast-image-preview") {
-      const { png, reason } = await buildMapImage(env);
+      const theme = themeParam(url) ?? themeForToday();
+      const { png, reason } = await buildMapImage(env, await mapSpecFor(env, theme));
       if (!png) return Response.json({ image: false, reason }, { status: 404 });
       return new Response(png, { headers: { "Content-Type": "image/png" } });
     }
@@ -480,11 +807,11 @@ export default {
     }
 
     if (url.pathname === "/forecast-preview" || url.pathname === "/forecast-post") {
-      const text = await buildForecast(env);
+      const { theme, text } = await buildPost(env, themeParam(url) ?? themeForToday());
       if (url.pathname === "/forecast-preview") {
-        return Response.json({ text, chars: text.length });
+        return Response.json({ theme, text, chars: text.length });
       }
-      const { png } = await buildMapImage(env);
+      const { png } = await buildMapImage(env, await mapSpecFor(env, theme));
       const mediaId = png ? await uploadMedia(png, env) : null;
       const res = await postTweet(text, env, mediaId ?? undefined);
       return new Response(await res.text(), {
@@ -517,8 +844,8 @@ export default {
     if (!configured(env)) return;
     ctx.waitUntil(
       (async () => {
-        const text = await buildForecast(env);
-        const { png } = await buildMapImage(env);
+        const { theme, text } = await buildPost(env, themeForToday());
+        const { png } = await buildMapImage(env, await mapSpecFor(env, theme));
         const mediaId = png ? await uploadMedia(png, env) : null;
         await postTweet(text, env, mediaId ?? undefined);
       })()
