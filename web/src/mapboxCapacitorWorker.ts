@@ -12,9 +12,22 @@ import { recordMapboxUsage } from "./monitoring/mapboxUsageMeter";
 
 if (import.meta.env.PROD) {
   /* Route GL's worker spawn through our wrapper script, which sets up the offline
-   * tile fetch before importScripts loads the real csp-worker (?w=…). */
-  (mapboxgl as unknown as { workerUrl: string }).workerUrl =
+   * tile fetch before importScripts loads the real csp-worker (?w=…).
+   *
+   * mapbox-gl ≥3.25 spawns workers via `new Worker(url, {type:"module"})` — module
+   * workers have no `importScripts`, so workerUrl alone kills the wrapper (worker
+   * dies instantly → grey map, UI still loads). `workerClass` takes precedence:
+   * GL calls `new workerClass()` with no options, and a plain `new Worker(url)`
+   * spawns a classic worker where importScripts exists again. */
+  const offlineTilesWorkerUrl =
     `${offlineWorkerUrl}?w=${encodeURIComponent(new URL(mapboxWorkerUrl, location.href).href)}`;
+  class OfflineTilesWorker extends Worker {
+    constructor() {
+      super(offlineTilesWorkerUrl);
+    }
+  }
+  (mapboxgl as unknown as { workerUrl: string }).workerUrl = offlineTilesWorkerUrl;
+  (mapboxgl as unknown as { workerClass: new () => Worker }).workerClass = OfflineTilesWorker;
 }
 
 /* Main-thread wrap: style JSON, sprites, and tilejson fetch on the window thread.
