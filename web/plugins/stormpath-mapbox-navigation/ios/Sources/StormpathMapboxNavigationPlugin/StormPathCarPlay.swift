@@ -145,7 +145,6 @@ public final class StormPathCarPlay {
             onCarResumeNavigation?()
         }
         map.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
-        controller.radar.setEnabled(overview && guiding)
         drawCarPlayAlternates()
     }
 
@@ -185,7 +184,6 @@ public final class StormPathCarPlay {
         startTripIfNeeded()
         drawCarPlayAlternates()
         mapController?.navigationMapView.navigationCamera.update(cameraState: overview ? .overview : .following)
-        mapController?.radar.setEnabled(overview)
     }
 
     func routesChanged(_ routes: NavigationRoutes) {
@@ -325,24 +323,16 @@ public final class StormPathCarPlay {
                 guard let self else { return }
                 overview.toggle()
                 mapController?.navigationMapView.navigationCamera.update(cameraState: overview && guiding ? .overview : .following)
-                mapController?.radar.setEnabled(overview && guiding)
                 drawCarPlayAlternates()
                 configureNavigationBar()
             },
             CPBarButton(title: "Conditions") { [weak self] _ in self?.showConditions() },
         ]
-        // Radar belongs to the route (RT) view only — in Drive it is noise.
-        guard overview else {
-            radarButton = nil
-            mapTemplate.trailingNavigationBarButtons = []
-            return
-        }
-        let button = CPBarButton(title: mapController?.radar.status ?? "Radar off") { [weak self] _ in
-            guard let self, let radar = mapController?.radar else { return }
-            radar.setEnabled(!radar.enabled)
-        }
-        radarButton = button
-        mapTemplate.trailingNavigationBarButtons = [button]
+        /* CarPlay radar removed — tiles never loaded on the car screen ("Radar
+         * unavailable" always) and the phone companion now carries a live radar
+         * box. No trailing buttons; the overlay machinery stays disabled. */
+        radarButton = nil
+        mapTemplate.trailingNavigationBarButtons = []
     }
 
     private func snapshotUpdated() {

@@ -263,6 +263,41 @@
   color: #fbbf24;
 }
 
+/* Radar box — small regional storm view, roughly weather-graph sized. */
+.cp-companion__radar {
+  margin-bottom: 12px;
+}
+
+.cp-radar {
+  position: relative;
+  height: 240px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cp-radar__map {
+  position: absolute;
+  inset: 0;
+}
+
+.cp-radar__map canvas {
+  outline: none;
+}
+
+.cp-radar__note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+
 .cp-companion__graph .route-progress-glance,
 .cp-companion__graph section,
 .cp-companion__graph > div {

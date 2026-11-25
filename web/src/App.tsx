@@ -3412,6 +3412,8 @@ export default function App() {
           weatherRefreshing={routeInfoWeatherRefreshing}
           weatherRefreshNote={routeInfoRefreshNote}
           weatherRefreshNoteTone={routeInfoRefreshNoteTone}
+          radarAccessToken={env.mapboxToken}
+          tomorrowIoApiKey={env.tomorrowIoApiKey}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>

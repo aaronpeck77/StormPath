@@ -21,6 +21,7 @@ import { RouteProgressGlancePanel } from "./RouteProgressGlancePanel";
 import { RouteProgressStrip } from "./RouteProgressStrip";
 import { AdvisoryExpandedSections } from "./AdvisoryExpandedSections";
 import { useAdvisoryExpandedModel } from "./advisoryExpandedModel";
+import { CompanionRadarMap } from "./CompanionRadarMap";
 
 type RadarSample = { t: number; intensity: number };
 type WindPoint = { t: number; mph: number };
@@ -85,6 +86,10 @@ type Props = {
   weatherRefreshing?: boolean;
   weatherRefreshNote?: string | null;
   weatherRefreshNoteTone?: "info" | "warn";
+  /** Nearby radar box — the car's own overlay never loads, so storms while
+   * CarPlay-driving are watched here. Omit the token to hide the box. */
+  radarAccessToken?: string | null;
+  tomorrowIoApiKey?: string | null;
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -434,6 +439,24 @@ function CarPlayCompanionBody(p: Props) {
       {p.advisory.featureEnabled ? (
         <div className="cp-companion__detail">
           <AdvisoryExpandedSections p={advisoryProps} model={advisoryModel} />
+        </div>
+      ) : null}
+
+      {/* Radar box under the hazards — regional storm view centered on the
+       * driver. The car's own radar overlay never loaded; this is the CarPlay
+       * storm picture now. */}
+      {p.radarAccessToken ? (
+        <div className="cp-companion__radar">
+          <div className="cp-companion__graph-head">
+            <span className="cp-companion__rail-title">Nearby radar</span>
+            <span className="cp-companion__rail-sub">Around your position</span>
+          </div>
+          <CompanionRadarMap
+            accessToken={p.radarAccessToken}
+            tomorrowIoApiKey={p.tomorrowIoApiKey ?? null}
+            userLngLat={r.userLngLat}
+            isOnline={p.conditions.online}
+          />
         </div>
       ) : null}
     </div>
