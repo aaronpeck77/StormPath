@@ -38,7 +38,7 @@ import { useCarSessionPublish } from "./hooks/useCarSessionPublish";
 import { useCarPlayActive } from "./hooks/useCarPlayActive";
 import { useCarPlaySessionPair } from "./hooks/useCarPlaySessionPair";
 import { useCarPlayHazardAlerts } from "./hooks/useCarPlayHazardAlerts";
-import { detachCarPlayGuidance } from "./services/carSessionPublish";
+import { attachCarPlayGuidance, detachCarPlayGuidance } from "./services/carSessionPublish";
 import { CarPlayCompanionView } from "./ui/CarPlayCompanionView";
 import { pickAdvisoryVoiceLine } from "./nav/advisoryVoice";
 import { SPEED_LIMIT_DISPLAY_ENABLED } from "./nav/postedSpeed";
@@ -3408,6 +3408,10 @@ export default function App() {
           useMiles={roadUsesMiles(effectiveUserLngLat)}
           onEndTrip={handleStopAndClear}
           onUnplug={() => void detachCarPlayGuidance()}
+          onRefreshWeather={handleRefreshRouteInfoWeather}
+          weatherRefreshing={routeInfoWeatherRefreshing}
+          weatherRefreshNote={routeInfoRefreshNote}
+          weatherRefreshNoteTone={routeInfoRefreshNoteTone}
         />
       ) : (
       <AppMapStage driveMapProps={driveMapPropsWithBeacon}>
@@ -3899,6 +3903,8 @@ export default function App() {
         tierLabel={tierLabel}
         onReplayCoachmarks={handleReplayCoachmarks}
         setTapHint={setTapHint}
+        carPlayDetached={carPlayConnected && carPlayPresence.detached}
+        onPlugInCarPlay={() => void attachCarPlayGuidance()}
       />
 
       <ToolsSheet

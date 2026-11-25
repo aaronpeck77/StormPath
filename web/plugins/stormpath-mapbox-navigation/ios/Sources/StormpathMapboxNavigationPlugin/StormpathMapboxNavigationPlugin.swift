@@ -29,6 +29,7 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopOrphanedGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "detachCarPlayGuidance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "attachCarPlayGuidance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "armIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelIdleExit", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startTripPack", returnType: CAPPluginReturnPromise),
@@ -237,6 +238,24 @@ public class StormpathMapboxNavigationPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             StormPathCarPlay.shared.detachToPhone()
             call.resolve(["detached": true])
+        }
+    }
+
+    /// Phone-side "Plug In": re-attach the car display to the live trip after a
+    /// StormPath-only unplug — the same re-arm the car's Resume button performs.
+    /// No-op when Core is idle, CarPlay is not connected, or routes are gone.
+    @objc func attachCarPlayGuidance(_ call: CAPPluginCall) {
+        Task { @MainActor [weak self] in
+            guard let self else {
+                call.resolve(["attached": false])
+                return
+            }
+            guard self.sessionActive, StormPathCarPlay.shared.isConnected, let routes = self.lastNavRoutes else {
+                call.resolve(["attached": false])
+                return
+            }
+            StormPathCarPlay.shared.guidanceStarted(routes: routes)
+            call.resolve(["attached": true])
         }
     }
 

@@ -151,6 +151,12 @@ export interface StormpathMapboxNavigationPlugin {
    */
   detachCarPlayGuidance(): Promise<{ detached: boolean }>;
   /**
+   * Phone-side "Plug In": re-attach the car display to the live trip after a
+   * StormPath-only unplug — the same re-arm the car's Resume button performs.
+   * No-op when Core is idle, CarPlay is not connected, or routes are gone.
+   */
+  attachCarPlayGuidance(): Promise<{ attached: boolean }>;
+  /**
    * Quit the iOS process after this many milliseconds if it is still in the
    * background. A drive must not call this.
    */

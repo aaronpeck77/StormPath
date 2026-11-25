@@ -44,6 +44,10 @@ export class StormpathMapboxNavigationWeb extends WebPlugin {
     return { detached: false };
   }
 
+  async attachCarPlayGuidance() {
+    return { attached: false };
+  }
+
   async armIdleExit() {}
 
   async cancelIdleExit() {}

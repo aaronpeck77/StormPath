@@ -4,7 +4,10 @@ const bridge = vi.hoisted(() => ({ native: false, publish: vi.fn().mockResolvedV
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => bridge.native } }));
 vi.mock("@stormpath/car-session", () => ({ StormpathCarSession: { publish: bridge.publish, clear: bridge.clear } }));
 vi.mock("@stormpath/mapbox-navigation", () => ({
-  StormpathMapboxNavigation: { detachCarPlayGuidance: vi.fn().mockResolvedValue({ detached: false }) },
+  StormpathMapboxNavigation: {
+    detachCarPlayGuidance: vi.fn().mockResolvedValue({ detached: false }),
+    attachCarPlayGuidance: vi.fn().mockResolvedValue({ attached: false }),
+  },
 }));
 
 import { buildCarConditions, publishCarSession } from "../carSessionPublish";

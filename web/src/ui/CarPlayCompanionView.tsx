@@ -79,6 +79,12 @@ type Props = {
    * keeps running on the phone map. CarPlay stays connected; the car's idle
    * map offers Resume to re-attach. */
   onUnplug: () => void;
+  /** Manual re-pull of route forecast + radar — same pipeline as the map
+   * view's Route Info refresh. Graphs poll on intervals otherwise. */
+  onRefreshWeather?: () => void;
+  weatherRefreshing?: boolean;
+  weatherRefreshNote?: string | null;
+  weatherRefreshNoteTone?: "info" | "warn";
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -348,6 +354,28 @@ function CarPlayCompanionBody(p: Props) {
 
       {/* Route weather graph — wind, radar, rain, temperature along the route. */}
       <div className="cp-companion__graph">
+        {p.onRefreshWeather ? (
+          <div className="cp-companion__graph-head">
+            <span className="cp-companion__rail-title">Route weather</span>
+            <button
+              type="button"
+              className="cp-companion__refreshbtn"
+              disabled={p.weatherRefreshing === true}
+              onClick={p.onRefreshWeather}
+              aria-label="Refresh route weather and radar"
+            >
+              {p.weatherRefreshing === true ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+        ) : null}
+        {p.weatherRefreshNote ? (
+          <div
+            className={`cp-companion__refresh-note${p.weatherRefreshNoteTone === "warn" ? " cp-companion__refresh-note--warn" : ""}`}
+            role="status"
+          >
+            {p.weatherRefreshNote}
+          </div>
+        ) : null}
         <RouteProgressGlancePanel
           timeline={r.timeline}
           routeWide={r.routeWide}

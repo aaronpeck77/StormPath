@@ -17,6 +17,9 @@ type Props = {
   tierLabel: string;
   onReplayCoachmarks: () => void;
   setTapHint: (hint: string | null) => void;
+  /** CarPlay scene connected but car display unplugged — offers the Plug In row. */
+  carPlayDetached?: boolean;
+  onPlugInCarPlay?: () => void;
 };
 
 /** Lazy-loaded About / Settings sheet host — reads settings from the store. */
@@ -29,6 +32,8 @@ export function AppAboutSheetHost({
   tierLabel,
   onReplayCoachmarks,
   setTapHint,
+  carPlayDetached = false,
+  onPlugInCarPlay,
 }: Props) {
   const aboutOpen = useUiStore((s) => s.aboutOpen);
   const setAboutOpen = useUiStore((s) => s.setAboutOpen);
@@ -132,6 +137,8 @@ export function AppAboutSheetHost({
           setAboutOpen(false);
           setToolsOpen(true);
         }}
+        carPlayDetached={carPlayDetached}
+        onPlugInCarPlay={onPlugInCarPlay}
       />
     </Suspense>
   );

@@ -225,6 +225,44 @@
   margin-bottom: 12px;
 }
 
+/* Weather graph head — title + manual refresh (same pipeline as Route Info). */
+.cp-companion__graph-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cp-companion__refreshbtn {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.cp-companion__refreshbtn:disabled {
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.08);
+  cursor: default;
+}
+
+.cp-companion__refresh-note {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0 0 6px;
+}
+
+.cp-companion__refresh-note--warn {
+  color: #fbbf24;
+}
+
 .cp-companion__graph .route-progress-glance,
 .cp-companion__graph section,
 .cp-companion__graph > div {

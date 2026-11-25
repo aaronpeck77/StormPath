@@ -105,6 +105,19 @@ export async function detachCarPlayGuidance(): Promise<boolean> {
   }
 }
 
+/** Phone-side "Plug In": re-attach the car display to the live trip after a
+ * StormPath-only unplug — the same re-arm the car's Resume button performs.
+ * No-op when nothing is detached; false on web/failure. */
+export async function attachCarPlayGuidance(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await StormpathMapboxNavigation.attachCarPlayGuidance();
+    return result.attached === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Read-and-clear the hazard titles the CarPlay scene just announced. Returns
  * the announced "SEVERITY · label" strings so the phone can highlight the

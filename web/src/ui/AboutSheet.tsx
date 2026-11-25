@@ -108,6 +108,11 @@ type Props = {
   liveRerouteEnabled?: boolean;
   /** Opens the StormPath Tools sheet (extras: share ETA, mileage log, …). */
   onOpenTools?: () => void;
+  /** CarPlay scene is connected but the car display was "unplugged" from the
+   * live trip — show the Plug In row that re-attaches guidance on the car. */
+  carPlayDetached?: boolean;
+  /** Re-attaches CarPlay guidance to the live trip (inverse of companion Unplug). */
+  onPlugInCarPlay?: () => void;
 };
 
 function dumpDateLabel(ms: number): string {
@@ -144,6 +149,8 @@ export function AboutSheet({
   onReplayCoachmarks,
   liveRerouteEnabled = true,
   onOpenTools,
+  carPlayDetached = false,
+  onPlugInCarPlay,
 }: Props) {
   const dev = import.meta.env.DEV;
   const tier = useMemo(() => getPayTier(), [open, payTierProbeKey]);
@@ -395,6 +402,19 @@ export function AboutSheet({
         ) : null}
 
         <div className="about-sheet__sections">
+          {carPlayDetached && onPlugInCarPlay ? (
+            <button type="button" className="about-sheet__panel tools-entry" onClick={onPlugInCarPlay}>
+              <div className="tools-entry__body">
+                <div className="tools-entry__title">Plug In</div>
+                <div className="tools-entry__sub">
+                  Put this trip back on the car screen — the phone keeps navigating either way.
+                </div>
+              </div>
+              <div className="tools-entry__chev" aria-hidden>
+                ›
+              </div>
+            </button>
+          ) : null}
           {onOpenTools ? (
             <button type="button" className="about-sheet__panel tools-entry" onClick={onOpenTools}>
               <div className="tools-entry__body">
