@@ -978,6 +978,39 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
         view.addSubview(navigationMapView)
         speedLimitSign.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(speedLimitSign)
+        /* Small StormPath lockup — bottom trailing corner, out of the maneuver
+         * card's way. Icon + two-tone wordmark mirroring the app's idle strip
+         * ("Storm" silver, "Path" sky). Decorative only: no touches. */
+        let logoView = UIImageView(image: UIImage(named: "CarPlayLogo"))
+        logoView.contentMode = .scaleAspectFit
+        logoView.layer.cornerRadius = 3.5
+        logoView.layer.masksToBounds = true
+        logoView.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        logoView.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        let wordmark = UILabel()
+        let stormAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 10, weight: .heavy),
+            .foregroundColor: UIColor(red: 0.89, green: 0.91, blue: 0.94, alpha: 1),
+        ]
+        let pathAttrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 10, weight: .heavy),
+            .foregroundColor: UIColor(red: 0.49, green: 0.83, blue: 0.99, alpha: 1),
+        ]
+        let text = NSMutableAttributedString(string: "Storm", attributes: stormAttrs)
+        text.append(NSAttributedString(string: "Path", attributes: pathAttrs))
+        wordmark.attributedText = text
+        let lockup = UIStackView(arrangedSubviews: [logoView, wordmark])
+        lockup.axis = .horizontal
+        lockup.alignment = .center
+        lockup.spacing = 3.5
+        lockup.isUserInteractionEnabled = false
+        lockup.layoutMargins = UIEdgeInsets(top: 3, left: 5, bottom: 3, right: 6)
+        lockup.isLayoutMarginsRelativeArrangement = true
+        lockup.backgroundColor = UIColor(white: 0.02, alpha: 0.34)
+        lockup.layer.cornerRadius = 8
+        lockup.layer.masksToBounds = true
+        lockup.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(lockup)
         NSLayoutConstraint.activate([
             navigationMapView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             navigationMapView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -985,6 +1018,8 @@ final class CarMapViewController: UIViewController, NavigationMapViewDelegate {
             navigationMapView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             speedLimitSign.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
             speedLimitSign.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            lockup.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            lockup.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
         ])
     }
 
