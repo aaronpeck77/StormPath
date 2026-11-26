@@ -74,6 +74,7 @@ Driving-first multi-route navigation / "route command center" with Mapbox map, t
 - Keep requests cheap: `dedupeRequest` is wired into Mapbox Directions + OpenWeather; `routeCache` is wired into `useComputeRoutes` (clean plans only). Reuse these utils for new network paths.
 - Do not re-add speculative utilities unless a real consumer exists (syncQueue, optimisticUpdates, memoryManager, useOfflineState were removed — safeStorage/useAppOnline already cover it).
 - Deterministic web verification: `npm test -- --exclude "src/weatherAlerts/__tests__/nwsUsProvider.integration.test.ts" --testTimeout 20000` from `web/`, then `npm run build:testflight`. The excluded integration test requires live NWS alerts; report its exclusion. Image-render tests can exceed the default 5-second timeout under parallel build/test load.
+- **Capacitor bumps need the plugin pins moved too:** `web/plugins/stormpath-*/Package.swift` each pin `capacitor-swift-pm` with `exact:` — bump them to match the npm `@capacitor/*` version in the same commit or SPM resolution fails in CI (build 645 lesson).
 
 ## After web runs
 
