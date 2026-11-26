@@ -626,23 +626,41 @@ function usDate(): string {
 
 const FOOTER = "Weather + hazards along your whole route — free on the App Store.";
 
+/** Discovery hashtags per theme — protected frame, never trimmed mid-tag. */
+const TAGS: Record<PostTheme, string> = {
+  forecast: "#Weather #RoadTrip #WeatherUpdate #wxtwitter",
+  workzones: "#WorkZone #Traffic #Construction #RoadTrip",
+  winter: "#WinterStorm #WinterWeather #Snow #wxtwitter",
+};
+
+/**
+ * Compose a post within X's 280-char cap. Header, footer and hashtags are the
+ * protected frame — body lines drop first (preferring to keep the last summary
+ * line when preserveLast), then the first line hard-trims as a last resort.
+ */
+function composePost(header: string, lines: string[], tags: string, preserveLast = false): string {
+  const frame = () => `${header}\n\n${lines.join("\n")}\n\n${FOOTER}\n${tags}`;
+  let text = frame();
+  while (text.length > 280 && lines.length > 1) {
+    lines.splice(preserveLast ? lines.length - 2 : lines.length - 1, 1);
+    text = frame();
+  }
+  if (text.length > 280 && lines.length) {
+    const over = text.length - 280 + 3;
+    lines[0] = lines[0].length > over + 3 ? lines[0].slice(0, lines[0].length - over) + "..." : lines[0];
+    text = frame();
+  }
+  return text;
+}
+
 async function buildForecast(env: Env): Promise<string> {
   const [storms, closures] = await Promise.all([stormLines(), closureLine(env)]);
   const header = `StormPath Morning Forecast · US · ${usDate()}`;
   const body = [...storms, ...(closures ? [closures] : [])];
-  let text: string;
   if (!body.length) {
-    text = `${header}\n\nAll clear — no severe storms or major highway closures on US corridors today.\n\n${FOOTER}`;
-  } else {
-    text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
+    body.push("All clear — no severe storms or major highway closures on US corridors today.");
   }
-  // Over 280? Drop closure entries first, then trim the longest storm lines.
-  while (text.length > 280 && body.length > 1) {
-    body.splice(body.length - 2, 1);
-    text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
-  }
-  if (text.length > 280) text = text.slice(0, 277) + "...";
-  return text;
+  return composePost(header, body, TAGS.forecast, true);
 }
 
 /** Tuesday theme — busiest interstate/US work-zone corridors. */
@@ -668,12 +686,7 @@ async function buildWorkzoneText(env: Env): Promise<string | null> {
     ...top.map(([k, n]) => `${k} — ${n} active zones`),
     `${total.toLocaleString("en-US")} work zones tracked today.`,
   ];
-  let text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
-  while (text.length > 280 && body.length > 1) {
-    body.splice(body.length - 2, 1);
-    text = `${header}\n\n${body.join("\n")}\n\n${FOOTER}`;
-  }
-  return text;
+  return composePost(header, body, TAGS.workzones, true);
 }
 
 /** Finer winter buckets for the winter post's alert lines. */
@@ -746,12 +759,7 @@ async function buildWinterText(env: Env): Promise<string | null> {
 
   if (!lines.length) return null;
   const header = `StormPath Winter Watch · US · ${usDate()}`;
-  let text = `${header}\n\n${lines.join("\n")}\n\n${FOOTER}`;
-  while (text.length > 280 && lines.length > 1) {
-    lines.splice(lines.length - 1, 1);
-    text = `${header}\n\n${lines.join("\n")}\n\n${FOOTER}`;
-  }
-  return text;
+  return composePost(header, lines, TAGS.winter);
 }
 
 /** Build the post for a theme; falls back to the forecast when a theme is empty. */
