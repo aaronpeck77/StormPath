@@ -22,7 +22,10 @@ const REGISTRY_URL =
 /* Registry rows we intentionally skip — the URL is dead or superseded by a
  * custom adapter. nysdot's /api/wzdx now serves the site's HTML app shell;
  * 511NY moved to the CARS 511x platform (fetchNysCarsEvents below). */
-const REGISTRY_DISABLED = new Set(["nysdot"]);
+/* quebec: Quebec City (Canada) municipal feed — outside US coverage, endpoint
+ * dead (read timeouts from multiple networks, streak 7+). Its registry state
+ * is "n/a" so stateNamesOf dropped it anyway — it never produced coverage. */
+const REGISTRY_DISABLED = new Set(["nysdot", "quebec"]);
 
 /* Event types dropped per feed before the feature cap. FL publishes a
  * "detour" record per diversion leg (~25k rows, ~17 per work zone) — the
